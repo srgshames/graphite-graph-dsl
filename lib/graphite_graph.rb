@@ -26,14 +26,19 @@ class GraphiteGraph
                    :vtitle_right => nil,
                    :width => 500,
                    :height => 250,
+                   :graphtype => nil,
                    :from => "-1hour",
                    :until => "now",
                    :surpress => false,
                    :description => nil,
+                   :hide_axes => nil,
                    :hide_legend => nil,
                    :hide_grid => nil,
+                   :hide_y_axis => nil,
                    :ymin => nil,
+                   :yminright => nil,
                    :ymax => nil,
+                   :ymaxright => nil,
                    :yunit_system => nil,
                    :linewidth => nil,
                    :linemode => nil,
@@ -49,7 +54,10 @@ class GraphiteGraph
                    :minor_grid_line_color => nil,
                    :area => :none,
                    :logbase => nil,
-                   :placeholders => nil}.merge(@overrides)
+                   :placeholders => nil,
+                   :area_alpha => nil,
+                   :theme => nil,
+                   :unique_legend => nil}.merge(@overrides)
   end
 
   def [](key)
@@ -261,17 +269,28 @@ class GraphiteGraph
     return nil if properties[:surpress]
 
     url_parts = []
-    colors = []
+
+    dual_axis = false
+    targets.each_value { |v| dual_axis = true if v.include?(:second_y_axis) }
 
     [:title, :vtitle, :from, :width, :height, :until].each do |item|
       url_parts << "#{item}=#{properties[item]}" if properties[item]
     end
 
     url_parts << "areaMode=#{properties[:area]}" if properties[:area]
+    url_parts << "hideAxes=#{properties[:hide_axes]}" if properties[:hide_axes]
     url_parts << "hideLegend=#{properties[:hide_legend]}" unless properties[:hide_legend].nil?
     url_parts << "hideGrid=#{properties[:hide_grid]}" if properties[:hide_grid]
-    url_parts << "yMin=#{properties[:ymin]}" if properties[:ymin]
-    url_parts << "yMax=#{properties[:ymax]}" if properties[:ymax]
+    url_parts << "hideYAxis=#{properties[:hide_y_axis]}" if properties[:hide_y_axis]
+    if dual_axis
+      url_parts << "yMinLeft=#{properties[:ymin]}" if properties[:ymin]
+      url_parts << "yMaxLeft=#{properties[:ymax]}" if properties[:ymax]
+    else
+      url_parts << "yMin=#{properties[:ymin]}" if properties[:ymin]
+      url_parts << "yMax=#{properties[:ymax]}" if properties[:ymax]
+    end
+    url_parts << "yMinRight=#{properties[:yminright]}" if properties[:yminright]
+    url_parts << "yMaxRight=#{properties[:ymaxright]}" if properties[:ymaxright]
     url_parts << "yUnitSystem=#{properties[:yunit_system]}" if properties[:yunit_system]
     url_parts << "lineWidth=#{properties[:linewidth]}" if properties[:linewidth]
     url_parts << "lineMode=#{properties[:linemode]}" if properties[:linemode]
@@ -283,10 +302,15 @@ class GraphiteGraph
     url_parts << "xFormat=#{properties[:xformat]}" if properties[:xformat]
     url_parts << "majorGridLineColor=#{properties[:major_grid_line_color]}" if properties[:major_grid_line_color]
     url_parts << "minorGridLineColor=#{properties[:minor_grid_line_color]}" if properties[:minor_grid_line_color]
+    url_parts << "graphType=#{properties[:graphtype]}" if properties[:graphtype]
     url_parts << "bgcolor=#{properties[:background_color]}" if properties[:background_color]
     url_parts << "fgcolor=#{properties[:foreground_color]}" if properties[:foreground_color]
     url_parts << "vtitleRight=#{properties[:vtitle_right]}" if properties[:vtitle_right]
     url_parts << "logBase=#{properties[:logbase]}" if properties[:logbase]
+    url_parts << "areaAlpha=#{properties[:area_alpha]}" if properties[:area_alpha]
+    url_parts << "minXStep=#{properties[:min_x_step]}" if properties[:min_x_step]
+    url_parts << "uniqueLegend=#{properties[:unique_legend]}" if properties[:unique_legend]
+    url_parts << "template=#{properties[:theme]}" if properties[:theme]
 
     target_order.each do |name|
       target = targets[name]
@@ -297,25 +321,33 @@ class GraphiteGraph
         raise "field #{name} does not have any data associated with it" unless target[:data]
 
         graphite_target = target[:data]
-
+        graphite_target = "transformNull(#{graphite_target},#{target[:transform_null]})" if target[:transform_null]
+        graphite_target = "lowestAverage(#{graphite_target},#{target[:lowest_average]})" if target[:lowest_average]
+        graphite_target = "highestAverage(#{graphite_target},#{target[:highest_average]})" if target[:highest_average]
+        graphite_target = "averageAbove(#{graphite_target},#{target[:average_above]})" if target[:average_above]
+        graphite_target = "averageBelow(#{graphite_target},#{target[:average_below]})" if target[:average_below]
+        graphite_target = "removeAbovePercentile(#{graphite_target},#{target[:remove_above_percentile]})" if target[:remove_above_percentile]
+        graphite_target = "removeAboveValue(#{graphite_target},#{target[:remove_above_value]})" if target[:remove_above_value]
+        graphite_target = "removeBelowPercentile(#{graphite_target},#{target[:remove_below_percentile]})" if target[:remove_below_percentile]
+        graphite_target = "removeBelowValue(#{graphite_target},#{target[:remove_below_value]})" if target[:remove_below_value]
+        graphite_target = "lineWidth(#{graphite_target},#{target[:field_linewidth]})" if target[:field_linewidth]
         graphite_target = "keepLastValue(#{graphite_target})" if target[:keep_last_value]
-        graphite_target = "sum(#{graphite_target})" if target[:sum]
         if target[:derivative]
           graphite_target = "derivative(#{graphite_target})"
         elsif target[:non_negative_derivative]
           graphite_target = "nonNegativeDerivative(#{graphite_target})"
         end
+        graphite_target = "sum(#{graphite_target})" if target[:sum]
+        graphite_target = "sumSeriesWithWildcard(#{graphite_target},#{target[:sum_with_wildcard]})" if target[:sum_with_wildcard]
         graphite_target = "highestAverage(#{graphite_target},#{target[:highest_average]})" if target[:highest_average]
-        if target[:scale]
-          graphite_target = "scale(#{graphite_target},#{target[:scale]})"
-        elsif target[:scale_to_seconds]
-          graphite_target = "scaleToSeconds(#{graphite_target},#{target[:scale_to_seconds]})"
-        end
+        graphite_target = "scale(#{graphite_target},#{target[:scale]})" if target[:scale]
+        graphite_target = "scaleToSeconds(#{graphite_target},#{target[:scale_to_seconds]})" if target[:scale_to_seconds]
         if target[:as_percent] == true
           graphite_target = "asPercent(#{graphite_target})"
         elsif target[:as_percent]
           graphite_target = "asPercent(#{graphite_target},#{target[:as_percent]})"
         end
+        graphite_target = "summarize(#{graphite_target},\"#{target[:summarize]}\")" if target[:summarize]
         graphite_target = "drawAsInfinite(#{graphite_target})" if target[:line]
         graphite_target = "movingAverage(#{graphite_target},#{target[:smoothing]})" if target[:smoothing]
 
@@ -350,8 +382,8 @@ class GraphiteGraph
     url_parts << "format=#{format}" if format
 
     if url
+      properties[:placeholders].each { |k,v| url_parts.each {|part| part.gsub!("%{#{k}}", v.to_s) } } if properties[:placeholders].is_a?(Hash)
       url_str = url_parts.map { |pair| k,v = pair.split('='); "#{k}=#{CGI.escape(v)}" }.join("&")
-      properties[:placeholders].each { |k,v| url_str.gsub!("%{#{k}}", v.to_s) } if properties[:placeholders].is_a?(Hash)
 
       url_str
     else
