@@ -61,7 +61,7 @@ class GraphiteGraphGenerator
 
   def extract_graph_name(branch)
     name_match = branch.match(@naming_pattern)
-    name_match ? name_match[1] : branch
+    name_match ? name_match.captures.join('.') : branch
   end
 
   def metric_branches
