@@ -14,7 +14,8 @@ class GraphiteGraphGenerator
     @stats = []
     @properties = {}
     @general_text = ""
-  
+    @all_metrics = ""
+
     clean_old_generated_graphs
     load_graph_gen
     generate_graph_definitions
@@ -52,6 +53,7 @@ class GraphiteGraphGenerator
   end
 
   def generate_graph_definitions
+    extract_all_metrics
     metric_branches.each do |branch|
       graph_name = extract_graph_name(branch)
       graph_file_name = "gen_#{graph_name}.graph"
@@ -64,20 +66,25 @@ class GraphiteGraphGenerator
     name_match ? name_match.captures.join('.') : branch
   end
 
-  def metric_branches
+  def extract_all_metrics
     response = Typhoeus::Request.get(@graphite_metrics_url)
     raise "Error fetching #{@graphite_metrics_url}. #{response.inspect}" unless response.success?
-    json = Yajl::Parser.parse(response.body) 
-    branches = json.join('|').scan(@context).uniq.map { |branch| branch[0] }
+    @all_metrics = Yajl::Parser.parse(response.body).join('|')
+  end
+
+  def metric_branches
+    branches = @all_metrics.scan(@context).uniq.map { |branch| branch[0] }
   end
 
   def graph_file_content(graph_name, branch)
     graph_title = graph_name.gsub('_', ' ').gsub(' - ', ' ').gsub('.', ' - ').gsub('  ', ' ')      
     graph_file_content = "title \"#{graph_title}\"\n\n" << @general_text      
     @stats.uniq.each do |stat|
-      graph_file_content << "field :#{stat},\n" << ":data => \"#{full_metric(branch, stat)}\""
-      if @properties.length > 0
-        graph_file_content << ",\n#{@properties.to_s[1..-2]}\n"
+      if @all_metrics.match([branch, stat].join('.'))
+        graph_file_content << "field :#{stat},\n" << ":data => \"#{full_metric(branch, stat)}\""
+        if @properties.length > 0
+          graph_file_content << ",\n#{@properties.to_s[1..-2]}\n"
+        end
       end
       graph_file_content << "\n\n"
     end
