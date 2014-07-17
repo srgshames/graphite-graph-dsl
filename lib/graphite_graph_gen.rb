@@ -31,11 +31,7 @@ class GraphiteGraphGenerator
     end
 
     options.each do |key, value|
-      if key.to_s.start_with? 'field_prop'
-        @properties[key.to_s.match(/^field_prop:(.*)$/)[1].to_sym] = value
-      else
-        self.instance_variable_set "@#{key}", value
-      end
+      self.instance_variable_set "@#{key}", value
     end
   end
 
@@ -79,11 +75,13 @@ class GraphiteGraphGenerator
   def graph_file_content(graph_name, branch)
     graph_title = graph_name.gsub('_', ' ').gsub(' - ', ' ').gsub('.', ' - ').gsub('  ', ' ')      
     graph_file_content = "title \"#{graph_title}\"\n\n" << @general_text      
-    @stats.uniq.each do |stat|
+    @stats.each do |stat, property_overrides|
       if @all_metrics.match([branch, stat].join('.'))
         graph_file_content << "field :#{stat},\n" << ":data => \"#{full_metric(branch, stat)}\""
-        if @properties.length > 0
-          graph_file_content << ",\n#{@properties.to_s[1..-2]}\n"
+        stat_properties = @properties
+        stat_properties.update(property_overrides)
+        if stat_properties.length > 0
+          graph_file_content << ",\n#{stat_properties.to_s[1..-2]}\n"
         end
       end
       graph_file_content << "\n\n"
