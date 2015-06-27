@@ -77,7 +77,7 @@ class GraphiteGraphGenerator
     graph_file_content = "title \"#{graph_title}\"\n\n" << @general_text      
     @stats.each do |stat, property_overrides|
       if @all_metrics.match([branch, stat].join('.'))
-        field_name = stat.gsub('.', '_')
+        field_name = "#{stat}".gsub('.', '_')
         graph_file_content << "field :#{field_name},\n" << ":data => \"#{full_metric(branch, stat)}\""
         stat_properties = @properties
         stat_properties.update(property_overrides)
